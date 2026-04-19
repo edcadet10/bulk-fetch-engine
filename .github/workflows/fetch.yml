@@ -1,0 +1,78 @@
+name: fetch
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Records per job'
+        default: '200'
+        type: string
+      parallel_jobs:
+        description: 'Number of parallel jobs (max 256)'
+        default: '20'
+        type: string
+      delay_ms:
+        description: 'Throttle per request (ms)'
+        default: '1500'
+        type: string
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          PJ=${{ inputs.parallel_jobs }}
+          INDICES=$(seq 0 $((PJ-1)) | jq -R . | jq -cs .)
+          echo "matrix={\"job_index\":$INDICES}" >> $GITHUB_OUTPUT
+
+  fetch:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4
+      - name: Fetch slice ${{ matrix.job_index }}
+        env:
+          JOB_INDEX: ${{ matrix.job_index }}
+          TOTAL_JOBS: ${{ inputs.parallel_jobs }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          DELAY_MS: ${{ inputs.delay_ms }}
+        run: python scripts/fetch_batch.py
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: batch-${{ matrix.job_index }}
+          path: results/batch_*.json
+          retention-days: 7
+
+  merge:
+    needs: fetch
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+          merge-multiple: true
+      - name: Merge JSONs
+        run: python scripts/merge.py
+      - name: Upload merged CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-results
+          path: merged_results.csv
+          retention-days: 30
