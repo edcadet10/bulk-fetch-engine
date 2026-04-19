@@ -143,7 +143,6 @@ def main():
 
     results = []
     failed_count = 0
-    consecutive_403 = 0
     start = time.time()
 
     for i, row in enumerate(my_slice):
@@ -151,19 +150,13 @@ def main():
         ct = row.get('contractor_type', 'Commercial')
         result = fetch_one(cid, ct)
         if result and 'error' not in result:
-            # Merge in metadata from input CSV
             result['license_number'] = row.get('license_number', '')
             result['business_name'] = row.get('business_name', '')
             result['status_bucket'] = row.get('status_bucket', '')
             results.append(result)
-            consecutive_403 = 0
         else:
+            # Just record the error and keep going — ScraperAPI will rotate IP next request
             failed_count += 1
-            if result and result.get('error') == 'HTTP 403':
-                consecutive_403 += 1
-                if consecutive_403 >= 5:
-                    print(f'  STOP: 5 consecutive 403s — IP banned. Stopping at {len(results)} records.')
-                    break
             results.append(result or {'contractor_id': cid, 'error': 'unknown'})
 
         if (i + 1) % 25 == 0:
