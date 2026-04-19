@@ -144,6 +144,12 @@ def main():
     results = []
     failed_count = 0
     start = time.time()
+    out_path = RESULTS_DIR / f'batch_{JOB_INDEX:03d}.json'
+    CHECKPOINT_EVERY = 25  # save partial JSON every 25 records (worst-case loss = 25)
+
+    def checkpoint():
+        with out_path.open('w', encoding='utf-8') as fh:
+            json.dump(results, fh)
 
     for i, row in enumerate(my_slice):
         cid = row['contractor_id']
@@ -155,9 +161,12 @@ def main():
             result['status_bucket'] = row.get('status_bucket', '')
             results.append(result)
         else:
-            # Just record the error and keep going — ScraperAPI will rotate IP next request
             failed_count += 1
             results.append(result or {'contractor_id': cid, 'error': 'unknown'})
+
+        # Checkpoint frequently so cancellation never loses more than CHECKPOINT_EVERY records
+        if (i + 1) % CHECKPOINT_EVERY == 0:
+            checkpoint()
 
         if (i + 1) % 25 == 0:
             elapsed = time.time() - start
@@ -165,9 +174,7 @@ def main():
 
         time.sleep(DELAY_MS / 1000)
 
-    out_path = RESULTS_DIR / f'batch_{JOB_INDEX:03d}.json'
-    with out_path.open('w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2)
+    checkpoint()  # final save
     print(f'Saved {len(results)} results to {out_path} ({failed_count} errors)')
 
 
