@@ -25,24 +25,26 @@ DELAY_MS = int(os.environ.get('DELAY_MS', '1500'))
 MAX_RETRIES = 2
 
 DETAIL_URL = 'https://search.msboc.us/Detail.cfm?ContractorID={cid}&ContractorType={ct}&varDataSource={ds}'
-SEARCH_PRIME = 'https://search.msboc.us/ConsolidatedResults.cfm?ContractorType=&maxrecords=250&varDataSource={ds}&Advanced=1&SearchStatus=LA'
+SCRAPERAPI_URL = 'https://api.scraperapi.com/'
+SCRAPERAPI_KEY = os.environ.get('SCRAPERAPI_KEY', '')
+
+import urllib.parse
 
 session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-})
+
+
+def via_scraperapi(target_url: str) -> str:
+    """Wrap target URL through ScraperAPI proxy."""
+    if not SCRAPERAPI_KEY:
+        return target_url
+    return f'{SCRAPERAPI_URL}?api_key={SCRAPERAPI_KEY}&url={urllib.parse.quote(target_url)}'
 
 
 def prime_sessions():
-    """Hit search pages first to set CFID/CFTOKEN cookies."""
-    for ds in ('BOC', 'BOCRes'):
-        try:
-            session.get(SEARCH_PRIME.format(ds=ds), timeout=15)
-            time.sleep(1)
-        except Exception as e:
-            print(f'  prime {ds} warn: {e}', file=sys.stderr)
+    """Not needed when using ScraperAPI (each request gets fresh IP+cookies)."""
+    if SCRAPERAPI_KEY:
+        print('  using ScraperAPI — skipping session prime')
+        return
 
 
 def parse_detail(html: str, contractor_id: str, contractor_type: str) -> dict:
@@ -98,10 +100,11 @@ def parse_detail(html: str, contractor_id: str, contractor_type: str) -> dict:
 
 def fetch_one(contractor_id: str, contractor_type: str) -> dict | None:
     ds = 'BOCRes' if contractor_type.lower() == 'residential' else 'BOC'
-    url = DETAIL_URL.format(cid=contractor_id, ct=contractor_type, ds=ds)
+    target = DETAIL_URL.format(cid=contractor_id, ct=contractor_type, ds=ds)
+    url = via_scraperapi(target)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            r = session.get(url, timeout=15)
+            r = session.get(url, timeout=60)
             if r.status_code == 403:
                 if attempt < MAX_RETRIES:
                     time.sleep(5)

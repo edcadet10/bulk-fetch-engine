@@ -45,6 +45,7 @@ jobs:
           TOTAL_JOBS: ${{ inputs.parallel_jobs }}
           BATCH_SIZE: ${{ inputs.batch_size }}
           DELAY_MS: ${{ inputs.delay_ms }}
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
         run: python scripts/fetch_batch.py
       - name: Upload result
         uses: actions/upload-artifact@v4
